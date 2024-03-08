@@ -66,7 +66,7 @@ class NoisyQubitSimulator():
     input includes T,L and control pulses
     output includes E[O] for all O and for all rho_S
     """
-    def __init__(self, T, L, C_params, C_shape="Gaussian", MM=1000, K=400):
+    def __init__(self, T, L, C_params, C_shape="Gaussian", MM=1000, K=400, MultiTimeMeas =False):
         """
         T               : Evolution time
         L               : Total num of windows = pulse_number
@@ -90,11 +90,9 @@ class NoisyQubitSimulator():
         self.n_x        = [np.cos(a)*np.cos(b) for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_x
         self.n_y        = [np.cos(a)*np.sin(b) for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_y
         self.n_z        = [np.sin(a)           for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_z
-        #self.n_x        = [np.cos(a)*np.cos(b) for a,b in zip([x[1] for x in C_params], [x[2] for x in C_params])]    # convert ctrl_direction angle to n_x
-        #self.n_y        = [np.cos(a)*np.sin(b) for a,b in zip([x[1] for x in C_params], [x[2] for x in C_params])]    # convert ctrl_direction angle to n_y
-        #self.n_z        = [np.sin(a) for a in [x[1] for x in C_params]]                                               # convert ctrl_direction angle to n_z
         self.U_ctrl_T   = self.U_ctrl_T()                                               # the final control propagator 
-        self.trajectory = np.load('RTN_traj_hash.npy')	
+        self.trajectory = np.load('RTN_traj_hash.npy')
+        self.MultiTimeMeas = MultiTimeMeas                                              # Varing msmt time ?	
         
 
     def set_ctrl_shape(self):
@@ -103,11 +101,11 @@ class NoisyQubitSimulator():
         ////// should i instantiate this in the __init__ to avoid call it many times? /////////
         """
         if self.C_shape == "Gaussian":
-            h_t = lambda t: (5.6419/self.tau)* np.exp( -t**2/(0.1*self.tau)**2)  *(t<0.5*self.tau)*(t>-0.5*self.tau)            # Gaussian symmetric & normalized  waveform : the bandwith = T/L/10
+            h_t = lambda t: (5.64189583548624/self.tau)* np.exp( -t**2/(0.1*self.tau)**2)  *(t<0.5*self.tau)*(t>-0.5*self.tau)      # Gaussian symmetric & normalized  waveform : the bandwith = T/L/10
         elif  self.C_shape == "Triangle":
-            h_t = lambda t: (4/self.tau**2) *(-t+self.tau/2 if t>0 else t+self.tau/2)  *(t<0.5*self.tau)*(t>-0.5*self.tau)      # triangle symmetric & normalized  waveform 
+            h_t = lambda t: (4/self.tau**2) *(-t+self.tau/2 if t>0 else t+self.tau/2)  *(t<0.5*self.tau)*(t>-0.5*self.tau)          # triangle symmetric & normalized  waveform 
         
-        return [h_t(i) for i in np.linspace(-0.5*self.tau,0.5*self.tau, int(self.MM/self.L))]                                   # Discrete time_step sampling in ONE window
+        return [h_t(i + 0.5* self.dt ) for i in np.linspace(-0.5*self.tau,0.5*self.tau, int(self.MM/self.L), endpoint = False)]     # Discrete time_step sampling in ONE window
     
     def U_ctrl_T(self):
         """
@@ -115,6 +113,16 @@ class NoisyQubitSimulator():
         """
         unitary = pauli_operators[0]
         for n in range(self.L):
+            unitary =  self.su_2(self.C_params[n][0],[self.n_x[n], self.n_y[n], self.n_z[n]] ) @ unitary
+        return  np.matrix(unitary)
+    
+    def U_ctrl_n(self,n):
+        """
+        input: window index: n= 0, 1, ..., L-1 
+        return U_ctrl after window-n FINISHED, (L-1) gives U_ctrl_T
+        """
+        unitary = pauli_operators[0]
+        for n in range(n+1):
             unitary =  self.su_2(self.C_params[n][0],[self.n_x[n], self.n_y[n], self.n_z[n]] ) @ unitary
         return  np.matrix(unitary)
 
@@ -136,28 +144,42 @@ class NoisyQubitSimulator():
         """
         time-order propagator of the QE joint-system
         --------------------------------------------------------
-        Output: :  the U(T) =Propagate{H(t)} for ALL noise realization
+        Output: :  an size (=K) array of (2*2) matrices,the U(T) =Propagate{H(t)} for ALL noise realization
         """
-        evolve = lambda U,U_j: U_j @ U                                                                   # define a lambda function for calculating the propagators
-        U_total = [reduce(evolve, [expm(-1j*self.dt* time_slice) for time_slice in trajec]) \
-                              for trajec in self.set_total_hamiltonian()]                                # calculate and accumalate all propagators till the final one, and repeat over all realizations
-        #self.U_err = np.average(U_errr_all, axis =1)                                                    # averaging over all realizations
-        return U_total
-    
-    #def readout_R(self):
-    #    """
-    #    Output:  <O>|_S for all O and all rho_S in Rotating frame 
-    #    """
-    #    msmt_O = pauli_operators[1:]                                                                                            # All  observables
-    #    msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
-    #                           (pauli_operators[0]+pauli_operators[2]), (pauli_operators[0]-pauli_operators[2]),\
-    #                           (pauli_operators[0]+pauli_operators[3]), (pauli_operators[0]-pauli_operators[3]) ])              # All initial states
-    #    results = np.zeros((len(msmt_O), len(msmt_S)))
-    #    for idx_O, O in enumerate(msmt_O):
-    #        U_all = self.evolution()
-    #        for idx_S, S in enumerate(msmt_S):
-    #            results[idx_O,idx_S] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all] )                            # calculate E[O(T)]_rhoS
-    #    return results
+        if self.MultiTimeMeas == False:
+            """
+            only measure at t= T:
+            Returen an size (=K) array of (2*2) matrices,the U(T) =Propagate{H(t)} for ALL noise realization
+            """
+            evolve = lambda U,U_j: U_j @ U                                                                   # define a lambda function for calculating the propagator
+            U_total = [reduce(evolve, [expm(-1j*self.dt* time_slice) for time_slice in trajec]) \
+                                 for trajec in self.set_total_hamiltonian()]                                # calculate and accumalate all propagators till the final one, and repeat over all realizations
+            #self.U_err = np.average(U_errr_all, axis =1)                                                    # averaging over all realizations
+        else:
+            """
+            measure multiple-time at window n <= L
+            Returen an size (=K) array of (L *2*2) matrices,
+            the U_n(T) =Propagate{H(t)} for ALL noise realization 
+            """
+            evolve = lambda U,U_j: U_j @ U                                                                   
+            total_Hamiltonian_list = self.set_total_hamiltonian()
+            U_stage= []#U_stage = np.zeros((self.K, self.L), dtype= object)
+            for n in range(self.L):
+                """
+                the chooped propagator for t in window (n-1) to window n
+                """
+                U_stage.append( [reduce(evolve, [expm(-1j*self.dt* time_slice) for time_slice in trajec]) \
+                                  for trajec in total_Hamiltonian_list[:, int(n*self.MM/self.L):int((n+1)*self.MM/self.L), :, :]]   )
+            U_stage = np.moveaxis(np.array(U_stage) , 0, 1)                     # shuffle the 1st two axies such that the dim =(K,L,2,2)
+            for n in range(1,self.L): 
+                """
+                the propagator for t in window 0 to window n
+                """
+                for k in range(self.K):
+                    U_stage[k,n] =  U_stage[k,n] @  U_stage[k,n-1]              # pre-pend the already evoleved early window
+            U_total = U_stage            
+
+        return np.array(U_total,dtype='complex')
 
     def readout_T(self):
         """
@@ -168,19 +190,40 @@ class NoisyQubitSimulator():
         we want tilde{O} = U_0^+ @ O @ U_0  = pauli
         thus the R-frame O = U_0 @ pauli @ U_0^+ to make sure T-frame's O properly cycle over pauli 
         """
-        msmt_O =  [self.U_ctrl_T @ O @ (self.U_ctrl_T.getH()) for O in  pauli_operators[1:]]                                    # All R-frame observables to make T-frame tilde{O} = pauli
-        msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
+        if self.MultiTimeMeas == False:
+            """
+            single time
+            """
+            msmt_O =  [self.U_ctrl_T @ O @ (self.U_ctrl_T.getH()) for O in  pauli_operators[1:]]                                    # All R-frame observables to make T-frame tilde{O} = pauli
+            msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
+                                   (pauli_operators[0]+pauli_operators[2]), (pauli_operators[0]-pauli_operators[2]),\
+                                   (pauli_operators[0]+pauli_operators[3]), (pauli_operators[0]-pauli_operators[3]) ])              # All initial states
+            U_all = self.evolution()
+            results = np.zeros((len(msmt_O), len(msmt_S)))
+            for idx_O, O in enumerate(msmt_O):            
+                for idx_S, S in enumerate(msmt_S):
+                    # below: average over all trajectories 
+                    results[idx_O,idx_S] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all] )     # calculate E[O(T)]_rhoS in Rotating frame
+            # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli
+        else:
+            """
+            multiple time
+            """
+            msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
                                (pauli_operators[0]+pauli_operators[2]), (pauli_operators[0]-pauli_operators[2]),\
-                               (pauli_operators[0]+pauli_operators[3]), (pauli_operators[0]-pauli_operators[3]) ])              # All initial states
-        U_all = self.evolution()
-        results = np.zeros((len(msmt_O), len(msmt_S)))
-        for idx_O, O in enumerate(msmt_O):            
-            for idx_S, S in enumerate(msmt_S):
-                # below: average over all trajectories 
-                results[idx_O,idx_S] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all] )     # calculate E[O(T)]_rhoS in Rotating frame
-        # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli
+                               (pauli_operators[0]+pauli_operators[3]), (pauli_operators[0]-pauli_operators[3]) ])                  # All initial states
+            U_all = self.evolution_multi_T()
+            results = np.zeros((3,  6 , int(self.L)))
+            for n in range(self.L):
+                msmt_O = [self.U_ctrl_n(n) @ O @ (self.U_ctrl_n(n).getH()) for O in  pauli_operators[1:]]                           # All R-frame observables to make T-frame tilde{O} = pauli
+                for idx_O, O in enumerate(msmt_O):            
+                    for idx_S, S in enumerate(msmt_S):     
+                        # below: average over all trajectories
+                        results[idx_O,idx_S,n] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all[:,n ,:, :]] )    # calculate E[O(t_n)]_rhoS in Rotating frame
+                        # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli        
+        
         return results                                                                                                          # Toggling frame 
-    
+
     def su_2(self,angle,direction):
         """
         SU2 rotation 
