@@ -212,7 +212,7 @@ class NoisyQubitSimulator():
             msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
                                (pauli_operators[0]+pauli_operators[2]), (pauli_operators[0]-pauli_operators[2]),\
                                (pauli_operators[0]+pauli_operators[3]), (pauli_operators[0]-pauli_operators[3]) ])                  # All initial states
-            U_all = self.evolution_multi_T()
+            U_all = self.evolution()
             results = np.zeros((3,  6 , int(self.L)))
             for n in range(self.L):
                 msmt_O = [self.U_ctrl_n(n) @ O @ (self.U_ctrl_n(n).getH()) for O in  pauli_operators[1:]]                           # All R-frame observables to make T-frame tilde{O} = pauli
