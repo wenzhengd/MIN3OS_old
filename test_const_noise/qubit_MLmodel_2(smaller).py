@@ -50,14 +50,6 @@ class QubitMeasData():
         return( len(self.x) )
 
 
-#inputs  = np.array(data["training_inputs"] ,dtype='float32')
-#targets = np.array(data["training_targets"],dtype='float32') 
-
-#nInput  = inputs.shape[1]* inputs.shape[2]                      # = L*3
-#nOutput = targets.shape[1]* targets.shape[2]                    # =3*6= 18
-
-#print(nInput, nOutput)
-
 ############################################################################################################
 #########        build NN model 
 ############################################################################################################
@@ -144,7 +136,7 @@ class QubitNeuralNetwork(MyNN):
         self.criterion  = nn.MSELoss()                                                            # set loss_function of the NN model
         self.losses_training   = []    
         self.losses_testing    = []                                                                      
-        self.Epochs     = 2000
+        self.Epochs     = 1000
         self.batch_size = 10 
         self.split      = int(0.75 * self.num_sample)
         # training data:
@@ -155,12 +147,22 @@ class QubitNeuralNetwork(MyNN):
         self.testn_ds   = TensorDataset(torch.reshape(torch.from_numpy(inputs[self.split:] ),  (-1,self.nInputs)), \
                                         torch.reshape(torch.from_numpy(targets[self.split:]),  (-1,self.nOutputs)))             
         self.testn_dl   = DataLoader(self.testn_ds, self.batch_size, shuffle=False)                                                                  
-                
+    
+    def get_data_shape(self):
+        """
+        get the shape of data in training & testn
+        """
+        print('nInput, nOutputs -->',self.nInputs, self.nOutputs)
+        print("x_train, y_train =", torch.reshape(torch.from_numpy(inputs[0:self.split] ), (-1,self.nInputs)).shape,
+                                    torch.reshape(torch.from_numpy(targets[0:self.split]), (-1,self.nOutputs)).shape)    
+        print("x_testn, y_testn =", torch.reshape(torch.from_numpy(inputs[self.split:] ), (-1,self.nInputs)).shape,
+                                    torch.reshape(torch.from_numpy(targets[self.split:]), (-1,self.nOutputs)).shape)
     def train(self):
         """
         training the neural network
         """
-        #print(self.nInputs, self.nOutputs)
+        #print('nInput, nOutputs -->',self.nInputs, self.nOutputs)
+        #print('TensorData_train, TensorData_testn -->', self.train_ds.shape,  self.testn_ds.shape)
         for epoch in range(self.Epochs):
             for x, y in self.train_dl:
                 #print(x.size, y.size)
@@ -202,7 +204,7 @@ class QubitNeuralNetwork(MyNN):
         return  _opt_.x
 
 
-class QubitRecurrentNetwork(MyNN):
+class QubitRecurrentNetwork(MyGRU):
     """
     A class that train the RNN -GRU actually- model:
     Input: the 'inputs' & targets (it will be 'tensor'-preprocessed)
@@ -213,8 +215,9 @@ class QubitRecurrentNetwork(MyNN):
         self.inputs     = inputs                                                                  # Input data
         self.targets    = targets                                                                 # Output data
         self.num_sample = inputs.shape[0]                                                         # numer of data
+        self.SequenLen  = inputs.shape[1]                                                         # sequence length = L (=4)
         self.nInputs    = inputs.shape[2]                                                         # nInput based on input data (=3)
-        self.nOutputs   = targets.shape[1]* targets.shape[2]                                      # nOutput based on outout data (3*6=12)
+        self.nOutputs   = targets.shape[1]*targets.shape[2]*targets.shape[3]                      # nOutput based on outout data (4*3*6=72)
         self.model      = MyGRU(nInput=self.nInputs, 
                                 nHidden=10, 
                                 nLayer=2, 
@@ -223,23 +226,33 @@ class QubitRecurrentNetwork(MyNN):
         self.criterion  = nn.MSELoss()                                                            # set loss_function of the NN model
         self.losses_training   = []    
         self.losses_testing    = []                                                                      
-        self.Epochs     = 10000
+        self.Epochs     = 1000
         self.batch_size = 10 
         self.split      = int(0.75 * self.num_sample)
-        # training data:
-        self.train_ds   = TensorDataset(torch.reshape(torch.from_numpy(inputs[0:self.split] ), (-1,self.nInputs)), \
+        # training data: 
+        self.train_ds   = TensorDataset(torch.from_numpy(inputs[0:self.split]), \
                                         torch.reshape(torch.from_numpy(targets[0:self.split]), (-1,self.nOutputs)))              
         self.train_dl   = DataLoader(self.train_ds, self.batch_size, shuffle=False)                    
         # testing data:                                              
-        self.testn_ds   = TensorDataset(torch.reshape(torch.from_numpy(inputs[self.split:] ),  (-1,self.nInputs)), \
+        self.testn_ds   = TensorDataset(torch.from_numpy(inputs[self.split:]), \
                                         torch.reshape(torch.from_numpy(targets[self.split:]),  (-1,self.nOutputs)))             
         self.testn_dl   = DataLoader(self.testn_ds, self.batch_size, shuffle=False)                                                                  
-                
+  
+    def get_data_shape(self):
+        """
+        get the shape of data in training & testn
+        """
+        print('nInput, nOutputs -->',self.nInputs, self.nOutputs)
+        print("x_train, y_train =", torch.from_numpy(inputs[0:self.split]).shape,
+                                    torch.reshape(torch.from_numpy(targets[0:self.split]), (-1,self.nOutputs)).shape)    
+        print("x_testn, y_testn =", torch.from_numpy(inputs[self.split:]).shape,
+                                    torch.reshape(torch.from_numpy(targets[self.split:]),  (-1,self.nOutputs)).shape)                
     def train(self):
         """
         training the neural network
         """
-        print(self.nInputs, self.nOutputs)
+        #print('nInput, nOutputs -->',self.nInputs, self.nOutputs)
+        #print('TensorData_train, TensorData_testn -->', self.train_ds.shape,  self.testn_ds.shape)
         for epoch in range(self.Epochs):
             for x, y in self.train_dl:
                 #print(x.size, y.size)
@@ -281,16 +294,23 @@ class QubitRecurrentNetwork(MyNN):
         return  _opt_.x
 
 
-
-
-
-#train_, testn_ = torch.utils.data.random_split(full_dataset, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
-#train_ds = TensorDataset(train_)
-#train_dl = DataLoader(self.train_ds, self.batch_size, shuffle=False)   
-#testn_ds = TensorDataset(testn_)
-#testn_dl = DataLoader(self.testn_ds, self.batch_size, shuffle=False)   
-
-
+#f = open(os.path.dirname(__file__)+"/simu_data_Gaussian_L=4_multiT_False.ds", 'rb') 
+#data = pickle.load(f)
+#f.close()
+#inputs  = np.array(data["training_inputs"] ,dtype='float32')
+#targets = np.array(data["training_targets"],dtype='float32') 
+#print(torch.reshape(torch.from_numpy(inputs[:] ), (-1,12)).shape)
+#print(torch.reshape(torch.from_numpy(targets[:] ), (-1,18)).shape)
+#
+#
+#
+#f = open(os.path.dirname(__file__)+"/simu_data_Gaussian_L=4_multiT_True.ds", 'rb') 
+#data = pickle.load(f)
+#f.close()
+#inputs  = np.array(data["training_inputs"] ,dtype='float32')
+#targets = np.array(data["training_targets"],dtype='float32')
+#print(torch.from_numpy(inputs[:]).shape)
+#print(torch.reshape(torch.from_numpy(targets[:] ), (-1,3*6*4)).shape)
 
 
 ############################################################################################################
@@ -310,14 +330,15 @@ if __name__ == '__main__':
     targets = np.array(data["training_targets"],dtype='float32') 
     print("Gaussian_ctrl. The inputs shape is: ",inputs.shape, ". targets shape is: ", targets.shape)
 
-    print('start training Gaussian ctrl:')
+    print('start training NN Gaussian ctrl:')
     my_training_G = QubitNeuralNetwork(inputs, targets)                   # Instantiate the class
+    my_training_G.get_data_shape()                                        # print the data shape
     my_training_G.train()                                                 # training
     torch.save(my_training_G.opt.state_dict(), \
-            join(dirname(abspath(__file__)), "optimizer_G_L=%d.pt"%(inputs.shape[1])))          # Save optimizer 
+            join(dirname(abspath(__file__)), "optimizer_G_mulT=F_L=%d.pt"%(inputs.shape[1])))          # Save optimizer 
     
     #//// https://stackoverflow.com/questions/74626924/state-dict-error-for-testing-a-model-that-is-trained-by-loading-checkpoints
-    my_training_G.test(join(dirname(abspath(__file__)), "optimizer_G_L=%d.pt"%(inputs.shape[1])))    # test
+    my_training_G.test(join(dirname(abspath(__file__)), "optimizer_G_mulT=F_L=%d.pt"%(inputs.shape[1])))    # test
     print(my_training_G.losses_testing)
 
 
@@ -330,14 +351,15 @@ if __name__ == '__main__':
     targets = np.array(data["training_targets"],dtype='float32') 
     print("Gaussian_ctrl. The inputs shape is: ",inputs.shape, ". targets shape is: ", targets.shape)
 
-    print('start training Gaussian ctrl:')
+    print('start training GRU Gaussian ctrl:')
     my_training_G = QubitRecurrentNetwork(inputs, targets)                # Instantiate the class
+    my_training_G.get_data_shape()                                        # print the data shape
     my_training_G.train()                                                 # training
     torch.save(my_training_G.opt.state_dict(), \
-            join(dirname(abspath(__file__)), "optimizer_G_L=%d.pt"%(inputs.shape[1])))          # Save optimizer 
+            join(dirname(abspath(__file__)), "optimizer_G_mulT=T_L=%d.pt"%(inputs.shape[1])))          # Save optimizer 
     
     #//// https://stackoverflow.com/questions/74626924/state-dict-error-for-testing-a-model-that-is-trained-by-loading-checkpoints
-    my_training_G.test(join(dirname(abspath(__file__)), "optimizer_G_L=%d.pt"%(inputs.shape[1])))    # test
+    my_training_G.test(join(dirname(abspath(__file__)), "optimizer_G_mulT=T_L=%d.pt"%(inputs.shape[1])))    # test
     print(my_training_G.losses_testing)    
 
 
