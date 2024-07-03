@@ -12,9 +12,6 @@ E[O] for all O and for all rho_S
 
 
 ==========
-debug:
-1. itis fine, while the MM should be large ~10000 otherwise error few percent
-2.  cast complext to real issue
 """
 
 # preample
@@ -22,19 +19,24 @@ import numpy as np
 from functools import reduce
 from itertools import product
 from scipy.linalg import expm
+import os
+from os.path import abspath, dirname, join
+from datetime import datetime
+
+
 ###############################################################################
 
 pauli_operators = [np.array([[1,0],[0,1]]), np.array([[0,1],[1,0]]), np.array([[0,-1j],[1j,0]]), np.array([[1,0],[0,-1]]) ]
 
-np.random.seed(seed = 77)
+np.random.seed(seed = 42)
 
-def RTN_generator(T, gamma, g, MM=1000, K=400):
+def RTN_generator(T, gamma, g, MM=1000, K=1000):
     """
     RTN sampling: a zero mean  zero-frequency-center telegraph noise
     output:  A shape = (K * MM) noise sample, where row->trajec col->time 
     ---------------------------------------------------------------------------------------
     If we know that state is s at time t: z_s(t), then at t+dt, the flip to s' has probablity
-	P_flip(t, t+dt) = e^(-gamma dt)
+	P_flip(t, t+dt) = 1- e^(-gamma dt)
     ---------------------------------------------------------------------------------------
     T         : The total evolution time 
     gamma     : flipping rate of RTN
@@ -46,7 +48,7 @@ def RTN_generator(T, gamma, g, MM=1000, K=400):
         trajectory_table[i][0] = 1 if (np.random.uniform(0,1)>0.5) else -1 #  \pm 1 full-random zero-mean
         j=1
         while j<MM:
-            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( gamma* T/MM  < np.random.uniform(0, 1)) \
+            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( np.exp(-gamma* T/MM)  < np.random.uniform(0, 1)) \
                 else -1* trajectory_table[i][j-1]
             j+=1
     # now add cos modulation 
@@ -66,7 +68,7 @@ class NoisyQubitSimulator():
     input includes T,L and control pulses
     output includes E[O] for all O and for all rho_S
     """
-    def __init__(self, T, L, C_params, C_shape="Gaussian", MM=1000, K=400, MultiTimeMeas =False):
+    def __init__(self, T, L, C_params, C_shape="Gaussian", MM=1000, K=1000, MultiTimeMeas =False):
         """
         T               : Evolution time
         L               : Total num of windows = pulse_number
@@ -91,7 +93,7 @@ class NoisyQubitSimulator():
         self.n_y        = [np.cos(a)*np.sin(b) for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_y
         self.n_z        = [np.sin(a)           for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_z
         self.U_ctrl_T   = self.U_ctrl_T()                                               # the final control propagator 
-        self.trajectory = np.load('RTN_traj_hash.npy')
+        self.trajectory = np.load(join(dirname(abspath(__file__)), "RTN_traj_hash.npy"))
         self.MultiTimeMeas = MultiTimeMeas                                              # Varing msmt time ?	
         
 
@@ -185,7 +187,7 @@ class NoisyQubitSimulator():
         """
         Output:  <O>|_S for all O and all rho_S in "Toggling" frame 
         ---------------------------------
-        Notice: since the evolution is in rotating frame and the ML_module will be working fror toggling frame dynamics [perturbation theory],
+        Notice: since the evolution is in rotating frame and the ML_module will be working in toggling frame dynamics [perturbation theory],
         the Output/readout here should be in T-frame. 
         we want tilde{O} = U_0^+ @ O @ U_0  = pauli
         thus the R-frame O = U_0 @ pauli @ U_0^+ to make sure T-frame's O properly cycle over pauli 
@@ -203,7 +205,8 @@ class NoisyQubitSimulator():
             for idx_O, O in enumerate(msmt_O):            
                 for idx_S, S in enumerate(msmt_S):
                     # below: average over all trajectories 
-                    results[idx_O,idx_S] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all] )     # calculate E[O(T)]_rhoS in Rotating frame
+                    results[idx_O,idx_S] = np.average( [ np.real(np.trace(np.matrix(U) @ S @ np.matrix(U).getH()@ O)) 
+                                                                for U in U_all] )                                                   # calculate E[O(T)]_rhoS in Rotating frame
             # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli
         else:
             """
@@ -219,10 +222,11 @@ class NoisyQubitSimulator():
                 for idx_O, O in enumerate(msmt_O):            
                     for idx_S, S in enumerate(msmt_S):     
                         # below: average over all trajectories
-                        results[idx_O,idx_S,n] = np.average( [ np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O) for U in U_all[:,n ,:, :]] )    # calculate E[O(t_n)]_rhoS in Rotating frame
+                        results[idx_O,idx_S,n] = np.average( [ np.real(np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O)) 
+                                                              for U in U_all[:,n ,:, :]] )                                          # calculate E[O(t_n)]_rhoS in Rotating frame
                         # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli        
         
-        return results                                                                                                          # Toggling frame 
+        return results                                                                                                              # Toggling frame 
 
     def su_2(self,angle,direction):
         """
@@ -232,26 +236,42 @@ class NoisyQubitSimulator():
             (direction[0]*pauli_operators[1]+direction[1]*pauli_operators[2]+direction[2]*pauli_operators[3])
 
 
-        
+
+
+
+def main_noisy_qubit_simul(T, L, C_params, C_shape, MM):
+    
+    pass
+
+
+
 if __name__ == '__main__':
+    K_sample = 1000                                      # Ensemble size of noise process
+
     #################################################
     # generate noise trajectories
     ###################################################
-    trajectory_main = RTN_generator(T=10**-6, gamma=10**4, g=20**5, MM=1000, K=400)
-    np.save('RTN_traj_hash.npy', np.array(trajectory_main))	
+    trajectory_main = RTN_generator(T=10**-6, gamma=10**4, g=10*10**5, MM=1000, K=K_sample)
+    np.save(join(dirname(abspath(__file__)), "RTN_traj_hash.npy"), np.array(trajectory_main))	
 
     #################################################
     # data set generation
     ###################################################
-    noisy_qubit = NoisyQubitSimulator(T=10**-6, L=4, C_params=[[0.5*np.pi, 0.4*np.pi, 0.3*np.pi],\
-                                                                 [0.2*np.pi, 0.6*np.pi, 0.8*np.pi],\
-                                                                 [0.6*np.pi, 1.4*np.pi, 2.3*np.pi],\
-                                                                 [0.90*np.pi, 1.4*np.pi, 0.0*np.pi]], C_shape="Triangle", MM=1000, K=400)
+    noisy_qubit = NoisyQubitSimulator(T=10**-6, L=4, C_params= [[0.6*np.pi, 0.8*np.pi, -0.5*np.pi],\
+                                                                [1.4*np.pi, 2.30*np.pi, 0.7*np.pi],\
+                                                                [0.6*np.pi, -0.8*np.pi, -2.5*np.pi],\
+                                                                [1.14*np.pi, 1.130*np.pi, 0.17*np.pi]], C_shape="Triangle", MM=1000, K=K_sample, MultiTimeMeas=True)
     #print(noisy_qubit.n_x)
     #print(noisy_qubit.U_ctrl_T)
     #noisy_qubit.set_total_hamiltonian()
     #noisy_qubit.evolution()
+    #print(noisy_qubit.readout_T()[:,:,-1]) # print  data at t = T
+    #print(noisy_qubit.readout_T()[:,:,-2]) # print  data at t = 0.75*T
+    #print(noisy_qubit.readout_T()[:,:,-3]) # print  data at t = 0.5*T
+    #print(noisy_qubit.readout_T()[:,:,-4]) # print  data at t = 0.25*T
+    print(datetime.now().strftime("%H:%M:%S"))
     print(noisy_qubit.readout_T())
+    print(datetime.now().strftime("%H:%M:%S"))
 
 
 
