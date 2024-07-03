@@ -36,7 +36,7 @@ def RTN_generator(T, gamma, g, MM=1000, K=1000):
     output:  A shape = (K * MM) noise sample, where row->trajec col->time 
     ---------------------------------------------------------------------------------------
     If we know that state is s at time t: z_s(t), then at t+dt, the flip to s' has probablity
-	P_flip(t, t+dt) = e^(-gamma dt)
+	P_flip(t, t+dt) = 1- e^(-gamma dt)
     ---------------------------------------------------------------------------------------
     T         : The total evolution time 
     gamma     : flipping rate of RTN
@@ -48,7 +48,7 @@ def RTN_generator(T, gamma, g, MM=1000, K=1000):
         trajectory_table[i][0] = 1 if (np.random.uniform(0,1)>0.5) else -1 #  \pm 1 full-random zero-mean
         j=1
         while j<MM:
-            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( gamma* T/MM  < np.random.uniform(0, 1)) \
+            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( np.exp(-gamma* T/MM)  < np.random.uniform(0, 1)) \
                 else -1* trajectory_table[i][j-1]
             j+=1
     # now add cos modulation 
@@ -58,13 +58,6 @@ def RTN_generator(T, gamma, g, MM=1000, K=1000):
 	#		trajectory_table[i][j] = trajectory_table[i][j] * np.cos(Omega * j * dt + phi)
     return g * trajectory_table
 
-def const_noise(T, gamma, g, MM=1000, K=1000):
-    """
-    Generate constant noise, mean !=0, Var ==0
-    """
-    trajectory_table = np.ones((K,MM))     #shape = num_sample * num_time_chop
-
-    return g*trajectory_table
 
 
 class NoisyQubitSimulator():
@@ -100,8 +93,7 @@ class NoisyQubitSimulator():
         self.n_y        = [np.cos(a)*np.sin(b) for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_y
         self.n_z        = [np.sin(a)           for a,b in zip(self.alpha,self.beta)]    # convert ctrl_direction angle to n_z
         self.U_ctrl_T   = self.U_ctrl_T()                                               # the final control propagator 
-        self.trajectory = const_noise(self.T , gamma=10**4, g=10*10**5, MM=self.MM, K=2)                                            
-        #self.trajectory = np.load(join(dirname(abspath(__file__)), "const_noise_hash.npy"))
+        self.trajectory = np.load(join(dirname(abspath(__file__)), "RTN_traj_hash.npy"))
         self.MultiTimeMeas = MultiTimeMeas                                              # Varing msmt time ?	
         
 
@@ -219,7 +211,6 @@ class NoisyQubitSimulator():
         else:
             """
             multiple time
-            Return is  size= (3 * 6 * L)
             """
             msmt_S = 1/2*np.array([(pauli_operators[0]+pauli_operators[1]), (pauli_operators[0]-pauli_operators[1]), \
                                (pauli_operators[0]+pauli_operators[2]), (pauli_operators[0]-pauli_operators[2]),\
@@ -234,6 +225,7 @@ class NoisyQubitSimulator():
                         results[idx_O,idx_S,n] = np.average( [ np.real(np.trace(np.matrix(U) @ S @ np.matrix(U).getH() @ O)) 
                                                               for U in U_all[:,n ,:, :]] )                                          # calculate E[O(t_n)]_rhoS in Rotating frame
                         # the results are rotating frame simultion , yet it corresponds to toggling frame results with stantard \tidle{O} = pauli        
+        
         return results                                                                                                              # Toggling frame 
 
     def su_2(self,angle,direction):
@@ -254,13 +246,13 @@ def main_noisy_qubit_simul(T, L, C_params, C_shape, MM):
 
 
 if __name__ == '__main__':
-    K_sample = 2                                      # Ensemble size of noise process
+    K_sample = 1000                                      # Ensemble size of noise process
 
     #################################################
     # generate noise trajectories
     ###################################################
-    trajectory_main = const_noise(T=10**-6, gamma=10**4, g=10*10**5, MM=1000, K=K_sample)
-    np.save(join(dirname(abspath(__file__)), "const_noise_hash.npy"), np.array(trajectory_main))	
+    trajectory_main = RTN_generator(T=10**-6, gamma=10**4, g=10*10**5, MM=1000, K=K_sample)
+    np.save(join(dirname(abspath(__file__)), "RTN_traj_hash.npy"), np.array(trajectory_main))	
 
     #################################################
     # data set generation
