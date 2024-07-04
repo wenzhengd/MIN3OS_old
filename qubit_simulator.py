@@ -48,7 +48,7 @@ def RTN_generator(T, gamma, g, MM=1000, K=1000):
         trajectory_table[i][0] = 1 if (np.random.uniform(0,1)>0.5) else -1 #  \pm 1 full-random zero-mean
         j=1
         while j<MM:
-            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( np.exp(-gamma* T/MM)  < np.random.uniform(0, 1)) \
+            trajectory_table[i][j] = 1 * trajectory_table[i][j-1] if ( np.exp(-gamma* T/MM)  > np.random.uniform(0, 1)) \
                 else -1* trajectory_table[i][j-1]
             j+=1
     # now add cos modulation 
